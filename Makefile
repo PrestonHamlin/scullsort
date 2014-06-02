@@ -29,6 +29,8 @@ modules:
 
 endif
 
+test: sculltest.c
+	gcc -Wall sculltest.c -o test
 
 clean:
 	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions Module.symvers modules.order
