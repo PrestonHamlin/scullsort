@@ -1,0 +1,6 @@
+/*
+ * Notes:
+ * seq_printf()
+ *     "It is common to ignore the return value"
+ *             Documentation/filesystems/seq_file.txt
+*/
