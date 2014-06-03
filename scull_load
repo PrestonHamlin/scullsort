@@ -26,6 +26,7 @@ mknod /dev/${device}0 c $major 0
 mknod /dev/${device}1 c $major 1
 mknod /dev/${device}2 c $major 2
 mknod /dev/${device}3 c $major 3
+# link scull0 with scull
 ln -sf ${device}0 /dev/${device}
 chgrp $group /dev/${device}[0-3] 
 chmod $mode  /dev/${device}[0-3]
@@ -35,6 +36,7 @@ mknod /dev/${device}pipe0 c $major 4
 mknod /dev/${device}pipe1 c $major 5
 mknod /dev/${device}pipe2 c $major 6
 mknod /dev/${device}pipe3 c $major 7
+# link scullpipe0 with scullpipe
 ln -sf ${device}pipe0 /dev/${device}pipe
 chgrp $group /dev/${device}pipe[0-3] 
 chmod $mode  /dev/${device}pipe[0-3]
@@ -59,7 +61,12 @@ mknod /dev/${device}priv  c $major 11
 chgrp $group /dev/${device}priv
 chmod $mode  /dev/${device}priv
 
-
+rm -f /dev/${device}sort0
+mknod /dev/${device}sort0  c $major 12
+# link scullsort0 with scullsort
+ln -sf ${device}sort0 /dev/${device}sort
+chgrp $group /dev/${device}sort
+chmod $mode  /dev/${device}sort
 
 
 
