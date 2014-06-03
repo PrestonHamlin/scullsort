@@ -650,6 +650,7 @@ int scull_init_module(void)
 	dev = MKDEV(scull_major, scull_minor + scull_nr_devs);
 	dev += scull_p_init(dev);
 	dev += scull_access_init(dev);
+	dev += scull_sort_init(dev);
 
 #ifdef SCULL_DEBUG
 	scull_create_proc();

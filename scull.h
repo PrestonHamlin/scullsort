@@ -52,8 +52,8 @@
 #define SCULL_P_NR_DEVS 4  /* scullpipe0 through scullpipe3 */
 #endif
 
-#ifndef SCULL_S_NR_DEVS
-#define SCULL_S_NR_DEVS 1  /* scullsort0 */
+#ifndef SCULL_SORT_NR_DEVS
+#define SCULL_SORT_NR_DEVS 1  /* scullsort0 */
 #endif
 
 /*
@@ -80,8 +80,8 @@
 #define SCULL_P_BUFFER 4000
 #endif
 
-#ifndef SCULL_S_BUFFER
-#define SCULL_S_BUFFER 4000
+#ifndef SCULL_SORT_BUFFER
+#define SCULL_SORT_BUFFER 4000
 #endif
 
 /*
@@ -119,6 +119,7 @@ extern int scull_qset;
 
 extern int scull_p_buffer;	/* pipe.c */
 
+extern int scull_sort_buffer;	/* sort.c */
 
 /*
  * Prototypes for shared functions
@@ -126,6 +127,10 @@ extern int scull_p_buffer;	/* pipe.c */
 
 int     scull_p_init(dev_t dev);
 void    scull_p_cleanup(void);
+
+int     scull_sort_init(dev_t dev);
+void    scull_sort_cleanup(void);
+
 int     scull_access_init(dev_t dev);
 void    scull_access_cleanup(void);
 

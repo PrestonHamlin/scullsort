@@ -1,6 +1,5 @@
 /*
- * sort.c -- fifo driver for scull
- *   Code is copied directly from pipe.c with only minor changes to names
+ * pipe.c -- fifo driver for scull
  *
  * Copyright (C) 2001 Alessandro Rubini and Jonathan Corbet
  * Copyright (C) 2001 O'Reilly & Associates
@@ -33,7 +32,7 @@
 
 #include "scull.h"		/* local definitions */
 
-struct scull_s_pipe {
+struct scull_sort {
         wait_queue_head_t inq, outq;       /* read and write queues */
         char *buffer, *end;                /* begin of buf, end of buf */
         int buffersize;                    /* used in pointer arithmetic */
@@ -45,40 +44,40 @@ struct scull_s_pipe {
 };
 
 /* parameters */
-static int scull_s_nr_devs = SCULL_S_NR_DEVS;	/* number of sort devices */
-int scull_s_buffer =  SCULL_S_BUFFER;	/* buffer size */
-dev_t scull_s_devno;			/* Our first device number */
+static int scull_sort_nr_devs = SCULL_SORT_NR_DEVS;	/* number of pipe devices */
+int scull_sort_buffer =  SCULL_SORT_BUFFER;	/* buffer size */
+dev_t scull_sort_devno;			/* Our first device number */
 
-module_param(scull_s_nr_devs, int, 0);	/* FIXME check perms */
-module_param(scull_s_buffer, int, 0);
+module_param(scull_sort_nr_devs, int, 0);	/* FIXME check perms */
+module_param(scull_sort_buffer, int, 0);
 
-static struct scull_s_pipe *scull_s_devices;
+static struct scull_sort *scull_sort_devices;
 
-static int scull_s_fasync(int fd, struct file *filp, int mode);
-static int spacefree(struct scull_s_pipe *dev);
+static int scull_sort_fasync(int fd, struct file *filp, int mode);
+static int spacefree(struct scull_sort *dev);
 
 /*
  * Open and close
  */
 
-static int scull_s_open(struct inode *inode, struct file *filp)
+static int scull_sort_open(struct inode *inode, struct file *filp)
 {
-	struct scull_s_pipe *dev;
+	struct scull_sort *dev;
 
-	dev = container_of(inode->i_cdev, struct scull_s_pipe, cdev);
+	dev = container_of(inode->i_cdev, struct scull_sort, cdev);
 	filp->private_data = dev;
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
 	if (!dev->buffer) {
 		/* allocate the buffer */
-		dev->buffer = kzalloc(scull_s_buffer, GFP_KERNEL);
+		dev->buffer = kzalloc(scull_sort_buffer, GFP_KERNEL);
 		if (!dev->buffer) {
 			mutex_unlock(&dev->mutex);
 			return -ENOMEM;
 		}
 	}
-	dev->buffersize = scull_s_buffer;
+	dev->buffersize = scull_sort_buffer;
 	dev->end = dev->buffer + dev->buffersize;
 	dev->rp = dev->wp = dev->buffer; /* rd and wr from the beginning */
 
@@ -92,12 +91,12 @@ static int scull_s_open(struct inode *inode, struct file *filp)
 	return nonseekable_open(inode, filp);
 }
 
-static int scull_s_release(struct inode *inode, struct file *filp)
+static int scull_sort_release(struct inode *inode, struct file *filp)
 {
-	struct scull_s_pipe *dev = filp->private_data;
+	struct scull_sort *dev = filp->private_data;
 
 	/* remove this filp from the asynchronously notified filp's */
-	scull_s_fasync(-1, filp, 0);
+	scull_sort_fasync(-1, filp, 0);
 	mutex_lock(&dev->mutex);
 	if (filp->f_mode & FMODE_READ)
 		dev->nreaders--;
@@ -115,10 +114,10 @@ static int scull_s_release(struct inode *inode, struct file *filp)
  * Data management: read and write
  */
 
-static ssize_t scull_s_read (struct file *filp, char __user *buf, size_t count,
+static ssize_t scull_sort_read (struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-	struct scull_s_pipe *dev = filp->private_data;
+	struct scull_sort *dev = filp->private_data;
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
@@ -156,7 +155,7 @@ static ssize_t scull_s_read (struct file *filp, char __user *buf, size_t count,
 
 /* Wait for space for writing; caller must hold device semaphore.  On
  * error the semaphore will be released before returning. */
-static int scull_getwritespace(struct scull_s_pipe *dev, struct file *filp)
+static int scull_getwritespace(struct scull_sort *dev, struct file *filp)
 {
 	while (spacefree(dev) == 0) { /* full */
 		DEFINE_WAIT(wait);
@@ -178,17 +177,17 @@ static int scull_getwritespace(struct scull_s_pipe *dev, struct file *filp)
 }	
 
 /* How much space is free? */
-static int spacefree(struct scull_s_pipe *dev)
+static int spacefree(struct scull_sort *dev)
 {
 	if (dev->rp == dev->wp)
 		return dev->buffersize - 1;
 	return ((dev->rp + dev->buffersize - dev->wp) % dev->buffersize) - 1;
 }
 
-static ssize_t scull_s_write(struct file *filp, const char __user *buf, size_t count,
+static ssize_t scull_sort_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-	struct scull_s_pipe *dev = filp->private_data;
+	struct scull_sort *dev = filp->private_data;
 	int result;
 
 	if (mutex_lock_interruptible(&dev->mutex))
@@ -225,9 +224,9 @@ static ssize_t scull_s_write(struct file *filp, const char __user *buf, size_t c
 	return count;
 }
 
-static unsigned int scull_s_poll(struct file *filp, poll_table *wait)
+static unsigned int scull_sort_poll(struct file *filp, poll_table *wait)
 {
-	struct scull_s_pipe *dev = filp->private_data;
+	struct scull_sort *dev = filp->private_data;
 	unsigned int mask = 0;
 
 	/*
@@ -246,23 +245,23 @@ static unsigned int scull_s_poll(struct file *filp, poll_table *wait)
 	return mask;
 }
 
-static int scull_s_fasync(int fd, struct file *filp, int mode)
+static int scull_sort_fasync(int fd, struct file *filp, int mode)
 {
-	struct scull_s_pipe *dev = filp->private_data;
+	struct scull_sort *dev = filp->private_data;
 
 	return fasync_helper(fd, filp, mode, &dev->async_queue);
 }
 
 #ifdef SCULL_DEBUG
-static int scull_read_s_mem_proc_show(struct seq_file *m, void *v)
+static int scull_read_p_mem_proc_show(struct seq_file *m, void *v)
 {
 	int i;
-	struct scull_s_pipe *p;
+	struct scull_sort *p;
 
 #define LIMIT (m->size-200)	/* don't print any more after this size */
-	seq_printf(m, "Default buffersize is %i\n", scull_s_buffer);
-	for(i = 0; i<scull_s_nr_devs && m->count <= LIMIT; i++) {
-		p = &scull_s_devices[i];
+	seq_printf(m, "Default buffersize is %i\n", scull_sort_buffer);
+	for(i = 0; i<scull_sort_nr_devs && m->count <= LIMIT; i++) {
+		p = &scull_sort_devices[i];
 		if (mutex_lock_interruptible(&p->mutex))
 			return -ERESTARTSYS;
 		seq_printf(m, "\nDevice %i: %p\n", i, p);
@@ -288,92 +287,92 @@ static int scull_read_s_mem_proc_show(struct seq_file *m, void *v)
 		.release	= single_release,\
 	};
 
-DEFINE_PROC_SEQ_FILE(scull_read_s_mem)
+DEFINE_PROC_SEQ_FILE(scull_read_p_mem)
 
 #endif
 
 
 /*
- * The file operations for the sort device
+ * The file operations for the pipe device
  * (some are overlayed with bare scull)
  */
-struct file_operations scull_s_pipe_fops = {
+struct file_operations scull_sort_fops = {
 	.owner =	THIS_MODULE,
 	.llseek =	no_llseek,
-	.read =		scull_s_read,
-	.write =	scull_s_write,
-	.poll =		scull_s_poll,
+	.read =		scull_sort_read,
+	.write =	scull_sort_write,
+	.poll =		scull_sort_poll,
 	.unlocked_ioctl =	scull_ioctl,
-	.open =		scull_s_open,
-	.release =	scull_s_release,
-	.fasync =	scull_s_fasync,
+	.open =		scull_sort_open,
+	.release =	scull_sort_release,
+	.fasync =	scull_sort_fasync,
 };
 
 /*
  * Set up a cdev entry.
  */
-static void scull_s_setup_cdev(struct scull_s_pipe *dev, int index)
+static void scull_sort_setup_cdev(struct scull_sort *dev, int index)
 {
-	int err, devno = scull_s_devno + index;
+	int err, devno = scull_sort_devno + index;
     
-	cdev_init(&dev->cdev, &scull_s_pipe_fops);
+	cdev_init(&dev->cdev, &scull_sort_fops);
 	dev->cdev.owner = THIS_MODULE;
 	err = cdev_add (&dev->cdev, devno, 1);
 	if (err)
 		/* fail gracefully */
-		printk(KERN_NOTICE "Error %d adding scullsort%d", err, index);
+		printk(KERN_NOTICE "Error %d adding scullpipe%d", err, index);
 }
 
 /*
- * Initialize the sort devs; return how many we did.
+ * Initialize the pipe devs; return how many we did.
  */
-int scull_s_init(dev_t firstdev)
+int scull_sort_init(dev_t firstdev)
 {
 	int i, result;
 
-	result = register_chrdev_region(firstdev, scull_s_nr_devs, "sculls");
+	result = register_chrdev_region(firstdev, scull_sort_nr_devs, "scullp");
 	if (result < 0) {
-		printk(KERN_NOTICE "Unable to get sculls region, error %d\n", result);
+		printk(KERN_NOTICE "Unable to get scullp region, error %d\n", result);
 		return 0;
 	}
-	scull_s_devno = firstdev;
-	scull_s_devices = kzalloc(scull_s_nr_devs * sizeof(struct scull_s_pipe), GFP_KERNEL);
-	if (scull_s_devices == NULL) {
-		unregister_chrdev_region(firstdev, scull_s_nr_devs);
+	scull_sort_devno = firstdev;
+	scull_sort_devices = kzalloc(scull_sort_nr_devs * sizeof(struct scull_sort), GFP_KERNEL);
+	if (scull_sort_devices == NULL) {
+		unregister_chrdev_region(firstdev, scull_sort_nr_devs);
 		return 0;
 	}
-	for (i = 0; i < scull_s_nr_devs; i++) {
-		init_waitqueue_head(&(scull_s_devices[i].inq));
-		init_waitqueue_head(&(scull_s_devices[i].outq));
-		mutex_init(&scull_s_devices[i].mutex);
-		scull_s_setup_cdev(scull_s_devices + i, i);
+	for (i = 0; i < scull_sort_nr_devs; i++) {
+		init_waitqueue_head(&(scull_sort_devices[i].inq));
+		init_waitqueue_head(&(scull_sort_devices[i].outq));
+		mutex_init(&scull_sort_devices[i].mutex);
+		scull_sort_setup_cdev(scull_sort_devices + i, i);
 	}
 #ifdef SCULL_DEBUG
-	proc_create("scullsort", 0, NULL, &scull_read_s_mem_proc_fops);
+	proc_create("scullpipe", 0, NULL, &scull_read_p_mem_proc_fops);
 #endif
-	return scull_s_nr_devs;
+	return scull_sort_nr_devs;
 }
 
 /*
  * This is called by cleanup_module or on failure.
  * It is required to never fail, even if nothing was initialized first
  */
-void scull_s_cleanup(void)
+void scull_sort_cleanup(void)
 {
 	int i;
 
 #ifdef SCULL_DEBUG
-	remove_proc_entry("scullsort", NULL);
+	remove_proc_entry("scullpipe", NULL);
 #endif
 
-	if (!scull_s_devices)
+	if (!scull_sort_devices)
 		return; /* nothing else to release */
 
-	for (i = 0; i < scull_s_nr_devs; i++) {
-		cdev_del(&scull_s_devices[i].cdev);
-		kfree(scull_s_devices[i].buffer);
+	for (i = 0; i < scull_sort_nr_devs; i++) {
+		cdev_del(&scull_sort_devices[i].cdev);
+		kfree(scull_sort_devices[i].buffer);
 	}
-	kfree(scull_s_devices);
-	unregister_chrdev_region(scull_s_devno, scull_s_nr_devs);
-	scull_s_devices = NULL; /* pedantic */
+	kfree(scull_sort_devices);
+	unregister_chrdev_region(scull_sort_devno, scull_sort_nr_devs);
+	scull_sort_devices = NULL; /* pedantic */
 }
