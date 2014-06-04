@@ -29,8 +29,32 @@ modules:
 
 endif
 
-test: sculltest.c
-	gcc -Wall sculltest.c -o test
+
+
+tests: sculltest writestuff readstuff writemore readmore
+
+sculltest: sculltest.c
+	gcc -Wall sculltest.c -o sculltest
+
+writestuff: writestuff.c
+	gcc -Wall writestuff.c -o writestuff
+
+readstuff: readstuff.c
+	gcc -Wall readstuff.c -o readstuff
+
+writemore: writemore.c
+	gcc -Wall writemore.c -o writemore
+
+readmore: readmore.c
+	gcc -Wall readmore.c -o readmore
+
+
+
+
+
+
+
+
 
 clean:
 	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions Module.symvers modules.order
