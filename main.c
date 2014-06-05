@@ -588,6 +588,7 @@ void scull_cleanup_module(void)
 	/* and call the cleanup functions for friend devices */
 	scull_p_cleanup();
 	scull_access_cleanup();
+	scull_sort_cleanup();
 }
 
 /*
