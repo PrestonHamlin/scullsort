@@ -197,6 +197,7 @@ static ssize_t scull_sort_write(struct file *filp, const char __user *buf,
                                 size_t count,      loff_t *f_pos)
 {
     int result, val;
+    size_t ret=0;
     printk("Write: waiting\n");
     //print_stuff();
     
@@ -220,35 +221,50 @@ static ssize_t scull_sort_write(struct file *filp, const char __user *buf,
             if (signal_pending(current))
                 return -ERESTARTSYS;
                 
-            printk("waiting for space... %d/%d\n", spacefree(), count);
+            printk("Waiting for space... %d/%d\n", spacefree(), count);
             if (mutex_lock_interruptible(&my_dev.mutex))
                 return -ERESTARTSYS;
-            val = spacefree();
+            
+            // perform incremental writes on whatever space is available
+            val = min(count, (size_t)(spacefree()));
+            if (copy_from_user(my_dev.wp, buf, val)) {
+                mutex_unlock(&my_dev.mutex);
+                return -EFAULT;
+            }
+            printk("Wrote %ld\n", (long)val);
+            count       -= val;
+            ret         += val;
+            my_dev.wp   += val;
+            val         = spacefree();
+            
             mutex_unlock(&my_dev.mutex);
             
 
             msleep(2000);
         }
+        mutex_lock(&my_dev.mutex);
     }
     
 //    result = scull_getwritespace(NULL, filp);
 //    if (result) return result;      // return code if failure
     
+    
     printk("Writing to scullsort - %d\n", spacefree());
     // there exists space to write to and a lock is held, so start writing
-    count = min(count, (size_t)(spacefree));
+//    count = min(count, (size_t)(spacefree));
     if (copy_from_user(my_dev.wp, buf, count)) {
         mutex_unlock(&my_dev.mutex);
         return -EFAULT;
     }
-    my_dev.wp += count;
+    my_dev.wp   += count;
+    ret         += count;
     
     mutex_unlock(&my_dev.mutex);
     wake_up_interruptible(&my_dev.inq);
     if (my_dev.async_queue)
         kill_fasync(&my_dev.async_queue, SIGIO, POLL_IN);
     
-    return count;
+    return ret;
 }
 
 
