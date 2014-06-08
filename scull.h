@@ -81,7 +81,7 @@
 #endif
 
 #ifndef SCULL_SORT_BUFFER
-#define SCULL_SORT_BUFFER 16
+#define SCULL_SORT_BUFFER 64
 #endif
 
 /*

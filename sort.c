@@ -29,6 +29,7 @@
 #include <linux/cdev.h>
 #include <linux/seq_file.h>
 #include <asm/uaccess.h>
+#include <linux/delay.h>
 
 #include "scull.h"        /* local definitions */
 
@@ -63,15 +64,34 @@ void scull_shift_buffer(void);
 
 // open scullsort device
 static int scull_sort_open(struct inode *inode, struct file *filp) {
-    printk("Opening scullsort\n");
+    printk("\nOpening scullsort\n");
+    print_stuff();
     
-    return 0;
+    // sleep (retry call) until lock acquired
+    if (mutex_lock_interruptible(&my_dev.mutex))
+        return -ERESTARTSYS;
+
+    if (filp->f_mode & FMODE_READ)  my_dev.nreaders++;
+    if (filp->f_mode & FMODE_WRITE) my_dev.nwriters++;
+    
+    mutex_unlock(&my_dev.mutex);
+    
+    return nonseekable_open(inode, filp);
 }
 
 // close scullsort device
 static int scull_sort_release(struct inode *inode, struct file *filp) {
     printk("Releasing scullsort\n");
     
+    scull_sort_fasync(-1, filp, 0);
+    mutex_lock(&my_dev.mutex);
+    
+    if (filp->f_mode & FMODE_READ)  my_dev.nreaders--;
+    if (filp->f_mode & FMODE_WRITE) my_dev.nwriters--;
+    
+    mutex_unlock(&my_dev.mutex);
+    
+    print_stuff();
     return 0;
 }
 
@@ -82,13 +102,35 @@ static int scull_sort_release(struct inode *inode, struct file *filp) {
 static int scull_getwritespace(struct scull_sort *dev,
                                struct file *filp)
 {
+    while (spacefree() == 0) {
+//        DEFINE_WAIT(wait);
+        mutex_unlock(&my_dev.mutex);
+        
+        // exit if non-blocking
+        if (filp->f_flags & O_NONBLOCK) {
+            printk("No blocking allowed!\n");
+            return -EAGAIN;
+        }
+        printk("in getwritespace\n");
+        
+//        prepare_to_wait(&my_dev.outq, &wait, TASK_INTERRUPTIBLE);
+//        if (spacefree() == 0) schedule();
+//        finish_wait(&my_dev.outq, &wait);
+        
+        if (signal_pending(current))
+            return -ERESTARTSYS;
+        if (mutex_lock_interruptible(&my_dev.mutex))
+            return -ERESTARTSYS;
+        
+        msleep(200);
+    }
     return 0;
 }    
 /* How much space is free? */
 static int spacefree(void) {
     if (my_dev.wp == my_dev.rp) return my_dev.buffersize -1;
     
-    return ((my_dev.buffersize + my_dev.rp) - my_dev.wp) -1;
+    return ((my_dev.buffersize + my_dev.buffer) - my_dev.wp) -1;
 }
 
 
@@ -100,8 +142,8 @@ static int spacefree(void) {
 static ssize_t scull_sort_read (struct file *filp, char __user *buf,
                                 size_t count,      loff_t *f_pos)
 {
-    printk("Attempting read from scullsort\n");
-    print_stuff();
+    printk("Read: waiting\n");
+    //print_stuff();
     
     // sleep (retry call) until lock acquired
     if (mutex_lock_interruptible(&my_dev.mutex))
@@ -113,8 +155,10 @@ static ssize_t scull_sort_read (struct file *filp, char __user *buf,
         mutex_unlock(&my_dev.mutex);        //  free the lock
         
         // exit if non-blocking
-        if (filp->f_flags & O_NONBLOCK)
+        if (filp->f_flags & O_NONBLOCK) {
+            printk("No blocking allowed!\n");
             return -EAGAIN;
+        }
         
         // sleep (retry call) until there is something to read
         if (wait_event_interruptible(my_dev.inq, (my_dev.rp != my_dev.wp)))
@@ -144,13 +188,67 @@ static ssize_t scull_sort_read (struct file *filp, char __user *buf,
     wake_up_interruptible(&my_dev.outq);
 }
 
+
+
 // perform write operations
+// Prior to each write, the values will be shifted to maximize number written.
+//  Also, the buffer will be sorted after recieving values from user.
 static ssize_t scull_sort_write(struct file *filp, const char __user *buf,
                                 size_t count,      loff_t *f_pos)
 {
-    printk("Writing to scullsort\n");
+    int result, val;
+    printk("Write: waiting\n");
+    //print_stuff();
     
-    return 0;
+    // sleep (retry call) until lock acquired
+    if (mutex_lock_interruptible(&my_dev.mutex))
+        return -ERESTARTSYS;
+    printk("Write: preparing\n");
+    
+    // free up some space
+    scull_shift_buffer();
+    
+    // wait for space to write
+    if ((val = spacefree()) < count) {
+        mutex_unlock(&my_dev.mutex);
+        if (filp->f_flags & O_NONBLOCK) {
+            printk("No blocking allowed!\n");    
+            return -EAGAIN;
+        }
+        
+        while (val < count) {
+            if (signal_pending(current))
+                return -ERESTARTSYS;
+                
+            printk("waiting for space... %d/%d\n", spacefree(), count);
+            if (mutex_lock_interruptible(&my_dev.mutex))
+                return -ERESTARTSYS;
+            val = spacefree();
+            mutex_unlock(&my_dev.mutex);
+            
+
+            msleep(2000);
+        }
+    }
+    
+//    result = scull_getwritespace(NULL, filp);
+//    if (result) return result;      // return code if failure
+    
+    printk("Writing to scullsort - %d\n", spacefree());
+    // there exists space to write to and a lock is held, so start writing
+    count = min(count, (size_t)(spacefree));
+    if (copy_from_user(my_dev.wp, buf, count)) {
+        mutex_unlock(&my_dev.mutex);
+        return -EFAULT;
+    }
+    my_dev.wp += count;
+    
+    mutex_unlock(&my_dev.mutex);
+    wake_up_interruptible(&my_dev.inq);
+    if (my_dev.async_queue)
+        kill_fasync(&my_dev.async_queue, SIGIO, POLL_IN);
+    
+    return count;
 }
 
 
@@ -166,9 +264,9 @@ static unsigned int scull_sort_poll(struct file *filp, poll_table *wait) {
 }
 
 static int scull_sort_fasync(int fd, struct file *filp, int mode) {
-    printk("Async scullsort...\n");
+//    printk("Async scullsort...\n");
     
-    return 0;
+    return fasync_helper(fd, filp, mode, &my_dev.async_queue);
 }
 
 
@@ -195,7 +293,7 @@ struct file_operations scull_sort_fops = {
 
 int scull_sort_init(dev_t firstdev) {
     int result;
-    printk("Initializing scullsort\n");
+    printk("\n=== Initializing scullsort ===\n");
 
     if (sort_initialized) {
         printk(KERN_ALERT "ERROR: Already initialized!\n");
@@ -258,11 +356,11 @@ void scull_sort_cleanup(void) {
 void print_stuff(void) {
     mutex_lock(&my_dev.mutex);
 
-    printk( "\nBuffer size: %d"
-            "\nFilled:      %ld"
-            "\nHidden:      %ld"
-            "\nReaders:     %d"
-            "\nWriters:     %d\n",
+    printk( "\tBuffer size: %d  \n"
+            "\tFilled:      %ld \n"
+            "\tHidden:      %ld \n"
+            "\tReaders:     %d  \n"
+            "\tWriters:     %d  \n",
             my_dev.buffersize,
             my_dev.wp - my_dev.rp,
             my_dev.rp - my_dev.buffer,
@@ -283,7 +381,7 @@ void scull_shift_buffer(void) {
         return;
     }
     if (my_dev.rp == my_dev.buffer) {
-        printk("No shifting neede\nd");
+        printk("No shifting needed\n");
         return;
     }
     
