@@ -29,6 +29,9 @@ scull_sort_release - called to release (close) the device file
     Decrements the number of readers and writers as per flags from the provided
     file pointer.
 
+compare_helper - comparison funcion passed to sort function
+    Compares two pointers casted to chars.
+
 spacefree - calculates the amount of immediately usable space in the buffer
     By some simple pointer arithmetic, the amount of memory readily usable in
     the buffer is calculated.
@@ -104,15 +107,15 @@ You are reading it.
 -Mark changed/added code
 -Email repository
 
--Tests ready, no editing required               -D
--Read operation sorts written data correctly    
+-Tests ready, no editing required               -DON
+-Read operation sorts written data correctly    -DONE
 -Read on near-empty buffer takes it all         -DONE
 -Read block IFF not O_NONBLOCK                  -DON
 -Read removes elements from buffer              -DONE
 
 -Write on full waits if not O_NONBLOCK          -DONE
     Write on full returns if O_NONBLOCK         -DON
--Write unblock on more space                    -DON
+-Write unblock on more space                    -DONE
 
 -SCULL_IOCRESET empty buffer
 -SORT allows concurrent access                  -DONE

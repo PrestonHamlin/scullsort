@@ -1,17 +1,9 @@
 /*
- * pipe.c -- fifo driver for scull
+ * sort.c -- sort driver for scull
  *
- * Copyright (C) 2001 Alessandro Rubini and Jonathan Corbet
- * Copyright (C) 2001 O'Reilly & Associates
- *
- * The source code in this file can be freely used, adapted,
- * and redistributed in source or binary form, so long as an
- * acknowledgment appears in derived source files.  The citation
- * should list that the code comes from the book "Linux Device
- * Drivers" by Alessandro Rubini and Jonathan Corbet, published
- * by O'Reilly & Associates.   No warranty is attached;
- * we cannot take responsibility for errors or fitness for use.
- *
+ * The code within this file is writen by Preston Hamlin, but borrows heavily
+ *  and is based upon the scullpipe device. See the neighboring files for their
+ *  copyright info.
  */
  
 #include <linux/module.h>
@@ -29,7 +21,10 @@
 #include <linux/cdev.h>
 #include <linux/seq_file.h>
 #include <asm/uaccess.h>
+
 #include <linux/delay.h>
+#include <linux/sort.h>
+
 
 #include "scull.h"        /* local definitions */
 
@@ -48,6 +43,7 @@ struct scull_sort {
 int sort_buffer =  SCULL_SORT_BUFFER;   // size of buffer
 dev_t scull_sort_devno;                 // device number
 static bool sort_initialized = false;   // first-time operations
+static bool sort_sorted = false;        // sort before next read?
 
 static struct scull_sort my_dev;        // device data
 
@@ -95,45 +91,17 @@ static int scull_sort_release(struct inode *inode, struct file *filp) {
     return 0;
 }
 
+// used to assist sort function
+static int compare_helper(const void*a, const void*b) {
+    return *(char*)a - *(char*)b;
+}
 
-
-/* Wait for space for writing; caller must hold device semaphore.  On
- * error the semaphore will be released before returning. */
-static int scull_getwritespace(struct scull_sort *dev,
-                               struct file *filp)
-{
-    while (spacefree() == 0) {
-//        DEFINE_WAIT(wait);
-        mutex_unlock(&my_dev.mutex);
-        
-        // exit if non-blocking
-        if (filp->f_flags & O_NONBLOCK) {
-            printk("No blocking allowed!\n");
-            return -EAGAIN;
-        }
-        printk("in getwritespace\n");
-        
-//        prepare_to_wait(&my_dev.outq, &wait, TASK_INTERRUPTIBLE);
-//        if (spacefree() == 0) schedule();
-//        finish_wait(&my_dev.outq, &wait);
-        
-        if (signal_pending(current))
-            return -ERESTARTSYS;
-        if (mutex_lock_interruptible(&my_dev.mutex))
-            return -ERESTARTSYS;
-        
-        msleep(200);
-    }
-    return 0;
-}    
-/* How much space is free? */
+// gets size of usable space in buffer
 static int spacefree(void) {
-    if (my_dev.wp == my_dev.rp) return my_dev.buffersize -1;
+    if (my_dev.wp == my_dev.rp) return my_dev.buffersize-1;
     
     return ((my_dev.buffersize + my_dev.buffer) - my_dev.wp) -1;
 }
-
-
 
 // read stuff
 // The read pointer will be incremented so as to prevent unneeded shifting
@@ -149,8 +117,7 @@ static ssize_t scull_sort_read (struct file *filp, char __user *buf,
     if (mutex_lock_interruptible(&my_dev.mutex))
         return -ERESTARTSYS;
     printk("Reading from scullsort\n");
-    
-        
+            
     while (my_dev.rp == my_dev.wp) {    // while there is nothing to read
         mutex_unlock(&my_dev.mutex);        //  free the lock
         
@@ -168,6 +135,11 @@ static ssize_t scull_sort_read (struct file *filp, char __user *buf,
         if (mutex_lock_interruptible(&my_dev.mutex))
             return -ERESTARTSYS;
     }
+    
+    
+    // sort array
+    sort(my_dev.rp, my_dev.wp - my_dev.rp, sizeof(char), compare_helper, NULL);
+    sort_sorted = true;
     
     // there is now data to be read, and it is safe to read the data
     count = min(count, (size_t)(my_dev.wp - my_dev.rp));
@@ -206,6 +178,7 @@ static ssize_t scull_sort_write(struct file *filp, const char __user *buf,
         return -ERESTARTSYS;
     printk("Write: preparing\n");
     
+    
     // free up some space
     scull_shift_buffer();
     
@@ -237,6 +210,7 @@ static ssize_t scull_sort_write(struct file *filp, const char __user *buf,
             my_dev.wp   += val;
             val         = spacefree();
             
+            sort_sorted = false;
             mutex_unlock(&my_dev.mutex);
             
 
@@ -244,10 +218,7 @@ static ssize_t scull_sort_write(struct file *filp, const char __user *buf,
         }
         mutex_lock(&my_dev.mutex);
     }
-    
-//    result = scull_getwritespace(NULL, filp);
-//    if (result) return result;      // return code if failure
-    
+     
     
     printk("Writing to scullsort - %d\n", spacefree());
     // there exists space to write to and a lock is held, so start writing
@@ -259,6 +230,7 @@ static ssize_t scull_sort_write(struct file *filp, const char __user *buf,
     my_dev.wp   += count;
     ret         += count;
     
+    sort_sorted = false;
     mutex_unlock(&my_dev.mutex);
     wake_up_interruptible(&my_dev.inq);
     if (my_dev.async_queue)
