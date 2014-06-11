@@ -168,7 +168,7 @@ static ssize_t scull_sort_read (struct file *filp, char __user *buf,
 static ssize_t scull_sort_write(struct file *filp, const char __user *buf,
                                 size_t count,      loff_t *f_pos)
 {
-    int result, val;
+    int val;
     size_t ret=0;
     printk("Write: waiting\n");
     //print_stuff();
@@ -192,11 +192,11 @@ static ssize_t scull_sort_write(struct file *filp, const char __user *buf,
         
         while (val < count) {
             if (signal_pending(current))
-                return -ERESTARTSYS;
+                return ret;
                 
             printk("Waiting for space... %d/%d\n", spacefree(), count);
             if (mutex_lock_interruptible(&my_dev.mutex))
-                return -ERESTARTSYS;
+                return ret;
             
             // perform incremental writes on whatever space is available
             val = min(count, (size_t)(spacefree()));
@@ -260,6 +260,49 @@ static int scull_sort_fasync(int fd, struct file *filp, int mode) {
 
 
 //=============================================================================
+//                                  IOCTL
+//=============================================================================
+
+long scull_sort_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
+	int err = 0;
+    
+	/*
+	 * extract the type and number bitfields, and don't decode
+	 * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
+	 */
+	if (_IOC_TYPE(cmd) != SCULL_IOC_MAGIC) return -ENOTTY;
+	if (_IOC_NR(cmd) > SCULL_IOC_MAXNR) return -ENOTTY;
+
+	/*
+	 * the direction is a bitmask, and VERIFY_WRITE catches R/W
+	 * transfers. `Type' is user-oriented, while
+	 * access_ok is kernel-oriented, so the concept of "read" and
+	 * "write" is reversed
+	 */
+	if (_IOC_DIR(cmd) & _IOC_READ)
+		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+	else if (_IOC_DIR(cmd) & _IOC_WRITE)
+		err =  !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
+	if (err) return -EFAULT;
+
+	switch(cmd) {
+	  case SCULL_IOCRESET:
+	    mutex_lock(&my_dev.mutex);
+		    printk("\n=== Resetting scullsort device! ===\n");
+		    my_dev.rp = my_dev.wp = my_dev.buffer;
+		    my_dev.nreaders = my_dev.nwriters = 0;
+		    sort_sorted = false;
+		mutex_unlock(&my_dev.mutex);
+		break;
+        
+	  default:
+		printk("\nERROR: scullsort device cannot understand IOCTL: %d\n", cmd);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+//=============================================================================
 //                              File Operations
 //=============================================================================
 
@@ -271,7 +314,7 @@ struct file_operations scull_sort_fops = {
     .read           = scull_sort_read,
     .write          = scull_sort_write,
     .poll           = scull_sort_poll,
-    .unlocked_ioctl = scull_ioctl,
+    .unlocked_ioctl = scull_sort_ioctl,
     .open           = scull_sort_open,
     .release        = scull_sort_release,
     .fasync         = scull_sort_fasync,

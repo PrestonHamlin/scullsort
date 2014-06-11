@@ -11,17 +11,24 @@ echo "demonstrates persistance of data"
 echo
 echo "readmore"
 echo "demonstrates read blocking on empty buffer - please write to the SORT"
-./readmore
+./readstuff
 
 echo
 echo "writemore"
-echo "demonstrates write blocking on full buffer - please write to the SORT"
-./writemore
+echo "demonstrates write blocking on full buffer - please read from the SORT"
+./writestuff
+./writestuff
+./writestuff
+./writestuff
+./writestuff
+./writestuff
+./writestuff
+./writestuff
+
+#echo
+#echo "concurrent read/write"
+#echo "demonstrates concurrent access to scullsort - simpler demo also available"
+#readc
 
 echo
-echo "concurrent read/write"
-echo "demonstrates concurrent access to scullsort - simpler demo also available"
-./readc
-
-echo
-echo "Demo Complete
+echo "Demo Complete"

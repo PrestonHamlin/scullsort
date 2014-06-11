@@ -117,13 +117,13 @@ You are reading it.
     Write on full returns if O_NONBLOCK         -DON
 -Write unblock on more space                    -DONE
 
--SCULL_IOCRESET empty buffer
+-SCULL_IOCRESET empty buffer                    -DONE
 -SORT allows concurrent access                  -DONE
 -Persistant data                                -DONE
 -Correct use of locking in critical sections    -DONE
 -Preserved the old types of devices             -DONE
 -Useless code                                   -DO
--Check the validity of all calls
+-Check the validity of all calls                -DO
 
 
 Optional Features

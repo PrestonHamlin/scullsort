@@ -31,7 +31,7 @@ endif
 
 
 
-tests: sculltest writestuff readstuff writemore readmore
+tests: sculltest writestuff readstuff nonblock
 
 sculltest: sculltest.c
 	gcc -Wall sculltest.c -o sculltest
@@ -42,11 +42,14 @@ writestuff: writestuff.c
 readstuff: readstuff.c
 	gcc -Wall readstuff.c -o readstuff
 
-writemore: writemore.c
-	gcc -Wall writemore.c -o writemore
+nonblock: nonblock.c
+	gcc -Wall nonblock.c -o nonblock
 
-readmore: readmore.c
-	gcc -Wall readmore.c -o readmore
+#writemore: writemore.c
+#	gcc -Wall writemore.c -o writemore
+
+#readmore: readmore.c
+#	gcc -Wall readmore.c -o readmore
 
 
 
@@ -57,7 +60,7 @@ readmore: readmore.c
 
 
 clean:
-	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions Module.symvers modules.order
+	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions Module.symvers modules.order sculltest writestuff readstuff nonblock
 
 depend .depend dep:
 	$(CC) $(EXTRA_CFLAGS) -M *.c > .depend
