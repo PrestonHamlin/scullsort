@@ -5,22 +5,45 @@ majority were taken from the following github repository:
     https://github.com/duxing2007/ldd3-examples-3.x
 
 Code further modified by Preston Hamlin to add a new device called scullsort,
-    which sorts the input characers such that the lowest valued characters in
+    which sorts the input characters such that the lowest valued characters in
     the buffer are read first. This modification consists of the new sort.c
-    file, minor motifications to the other code files and additional entries in
+    file, minor modifications to the other code files and additional entries in
     the makefile and load/unload scripts.
 
 
-TODO: Have scull_sort_write peroem incremental writes rather than block until
-        the entire text will fit.
-
+  
+  TODO: Make device unavailable and kill all pending requests on device reset.
+  TODO: Make buffer shift itself more often
+  TODO: Have poll and async functions do something useful.
 
 
                         === scullsort documentation ===
 The scullsort device driver is derived from the scullpipe device driver. The
-    diferences of note are the renaming of otherwise idential functions and the
-    changes in background tasks so as to acomplish the soring functionality.
+    differences of note are the renaming of otherwise identical functions and the
+    changes in background tasks so as to accomplish the sorting functionality.
 
+Following are terse descriptions of the files involved in this project:
+scull.h       - definitions used across the module
+main.c        - initializes module and its components
+access.c      - special scull devices
+pipe.c        - provides for scullpipe devices
+
+sculltest.c   - reads and writes using various devices
+readstuff.c   - reads content from scullsort device
+readmore.c    - reads more
+writestuff.c  - writes content to scullsort device
+nonblock.c    - opens device for writing, with O_NONBLOCK set
+
+runtests.sh   - runs several iterations of sample programs to demo behaviour
+scull_load    - creates device instances in filesystem, loads module
+scull_unload  - removes them
+README.txt    - this document
+Makefile      - builds module and tests
+    
+    
+    
+    
+Following are descriptions of functions implemented in the sort.c file:
 scull_sort_open - called to open the device file
     Increments the number of readers and writers as per flags from the provided
     file pointer. Effectively grants a "session" with the device.
@@ -69,7 +92,7 @@ print_stuff - a function used for debugging device access patterns
 
 scull_shift_buffer - shifts buffer contents and updates pointers
     Since the buffer does not wrap around, the space trailing behind the read
-    pointer needs to be reclamed. Each unread element is simply moved to a
+    pointer needs to be reclaimed. Each unread element is simply moved to a
     physical location in memory representative of its sorted respective
     position.
 
@@ -87,7 +110,7 @@ While the scull_getwritespace function is useful for modularizing the waiting
     scullsort device. As such I incorporated it into the write function,
     restructured the blocking mechanism, and optimized the waiting somewhat by
     putting the reader to sleep for a lengthy period, since it will probably
-    take multiple readers to free up enouth space and trigger a reorganizing of
+    take multiple readers to free up enough space and trigger a reorganizing of
     the buffer contents.
 
 
